@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FitTrack GPS</title>
+<!-- Simple favicon (data-URI SVG) -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%83%3C/text%3E%3C/svg%3E">
+<!-- PWA manifest via data-URI -->
+<link rel="manifest" href="data:application/manifest+json,{%22name%22:%22FitTrack%20GPS%22,%22short_name%22:%22FitTrack%22,%22start_url%22:%22.%22,%22display%22:%22standalone%22,%22background_color%22:%22%23f5f5f5%22,%22theme_color%22:%22%2366cc8a%22}">
+<link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body class="min-h-screen bg-base-200">
+<div class="max-w-2xl mx-auto p-4 space-y-4">
+
+  <!-- Header -->
+  <header class="navbar bg-base-100 rounded-box shadow">
+    <div class="flex-1 gap-2 items-center px-2">
+      <i data-lucide="activity" class="text-primary"></i>
+      <span class="text-xl font-bold">FitTrack GPS</span>
+    </div>
+    <button id="themeBtn" class="btn btn-ghost btn-circle" title="Toggle theme">
+      <i data-lucide="moon"></i>
+    </button>
+  </header>
+
+  <!-- Stats -->
+  <section class="stats stats-vertical sm:stats-horizontal w-full shadow bg-base-100">
+    <div class="stat">
+      <div class="stat-title">Workouts</div>
+      <div class="stat-value text-primary" id="statCount">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">Distance</div>
+      <div class="stat-value text-secondary" id="statDist">0 km</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">Time</div>
+      <div class="stat-value text-accent" id="statTime">0 h</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">Calories</div>
+      <div class="stat-value" id="statCal">0</div>
+    </div>
+  </section>
+
+  <!-- GPS tracker -->
+  <section class="card bg-base-100 shadow">
+    <div class="card-body">
+      <h2 class="card-title"><i data-lucide="map-pin"></i> Live GPS Tracker</h2>
+      <p class="text-sm opacity-70" id="gpsInfo">Tap start to track your route using GPS.</p>
+      <div class="flex flex-wrap gap-2 items-center">
+        <div class="font-mono text-2xl" id="liveTime">00:00:00</div>
+        <div class="font-mono text-2xl ml-auto" id="liveDist">0.00 km</div>
+      </div>
+      <div class="card-actions">
+        <button id="gpsStart" class="btn btn-primary"><i data-lucide="play"></i> Start</button>
+        <button id="gpsStop" class="btn btn-error" disabled><i data-lucide="square"></i> Stop &amp; Save</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Log form -->
+  <section class="card bg-base-100 shadow">
+    <form id="form" class="card-body gap-3">
+      <h2 class="card-title"><i data-lucide="plus-circle"></i> Log Workout</h2>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="form-control">
+          <span class="label-text mb-1">Type</span>
+          <select name="type" class="select select-bordered">
+            <option>Running</option><option>Walking</option><option>Cycling</option>
+            <option>Swimming</option><option>Hiking</option><option>Gym</option>
+          </select>
+        </label>
+        <label class="form-control">
+          <span class="label-text mb-1">Date</span>
+          <input name="date" type="date" class="input input-bordered" required>
+        </label>
+        <label class="form-control">
+          <span class="label-text mb-1">Distance (km)</span>
+          <input name="distance" type="number" step="0.01" min="0" class="input input-bordered" placeholder="5.00">
+        </label>
+        <label class="form-control">
+          <span class="label-text mb-1">Duration (min)</span>
+          <input name="duration" type="number" min="1" class="input input-bordered" placeholder="30" required>
+        </label>
+        <label class="form-control">
+          <span class="label-text mb-1">Calories (kcal)</span>
+          <input name="calories" type="number" min="0" class="input input-bordered" placeholder="Auto if empty">
+        </label>
+        <label class="form-control">
+          <span class="label-text mb-1">Photo (optional)</span>
+          <input name="photo" type="file" accept="image/*" class="file-input file-input-bordered">
+        </label>
+      </div>
+      <label class="form-control">
+        <span class="label-text mb-1">Route notes</span>
+        <textarea name="notes" class="textarea textarea-bordered" rows="2" placeholder="Park loop, windy, felt strong..."></textarea>
+      </label>
+      <div class="card-actions justify-end">
+        <button class="btn btn-primary"><i data-lucide="save"></i> Save Workout</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- History -->
+  <section class="card bg-base-100 shadow">
+    <div class="card-body">
+      <h2 class="card-title"><i data-lucide="history"></i> History</h2>
+      <div id="list" class="space-y-3"></div>
+      <p id="empty" class="text-center opacity-60 hidden">No workouts yet. Log your first one!</p>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ---------- Service worker (blob URL) & PWA registration ---------- */
+if ('serviceWorker' in navigator) {
+  const swCode = `self.addEventListener('fetch', e => e.respondWith(fetch(e.request).catch(() => caches.match(e.request))));`;
+  const swUrl = URL.createObjectURL(new Blob([swCode], { type: 'text/javascript' }));
+  navigator.serviceWorker.register(swUrl).catch(() => {});
+}
+
+/* ---------- IndexedDB wrapper (no localStorage) ---------- */
+const DB_NAME = 'fittrack', STORE = 'workouts';
+const dbReady = new Promise((resolve, reject) => {
+  const req = indexedDB.open(DB_NAME, 1);
+  req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+const tx = async (mode, fn) => {
+  const db = await dbReady;
+  return new Promise((resolve, reject) => {
+    const t = db.transaction(STORE, mode);
+    const req = fn(t.objectStore(STORE));
+    t.oncomplete = () => resolve(req?.result);
+    t.onerror = () => reject(t.error);
+  });
+};
+const db = {
+  add: w => tx('readwrite', s => s.add(w)),
+  remove: id => tx('readwrite', s => s.delete(id)),
+  all: () => tx('readonly', s => s.getAll()),
+};
+
+/* ---------- Helpers ---------- */
+const $ = id => document.getElementById(id);
+const MET = { Running: 9.8, Walking: 3.5, Cycling: 7.5, Swimming: 7, Hiking: 6, Gym: 5 };
+// Estimate calories: MET * 70 kg * hours (simple mock model)
+const estimateKcal = (type, minutes) => Math.round((MET[type] || 5) * 70 * minutes / 60);
+const fmtTime = s => [s / 3600, (s % 3600) / 60, s % 60].map(v => String(Math.floor(v)).padStart(2, '0')).join(':');
+// Haversine distance between two coordinates, returns km
+const haversine = (a, b) => {
+  const R = 6371, rad = d => d * Math.PI / 180;
+  const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+};
+
+/* ---------- Theme ---------- */
+const applyTheme = t => {
+  document.documentElement.dataset.theme = t;
+  $('themeBtn').innerHTML = `<i data-lucide="${t === 'dark' ? 'sun' : 'moon'}"></i>`;
+  lucide.createIcons();
+};
+$('themeBtn').onclick = () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  // Theme preference is persisted in IndexedDB (localStorage is not used)
+  tx('readwrite', s => s.put({ id: 'theme', type: 'setting', value: next }));
+};
+// Restore saved theme from IndexedDB on startup
+const loadTheme = async () => {
+  const s = await tx('readonly', st => st.get('theme'));
+  applyTheme(s?.value || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+};
+
+/* ---------- Rendering ---------- */
+const render = async () => {
+  const workouts = (await db.all()).filter(w => w.date).sort((a, b) => b.date.localeCompare(a.date));
+  const sum = (k) => workouts.reduce((acc, w) => acc + (+w[k] || 0), 0);
+
+  $('statCount').textContent = workouts.length;
+  $('statDist').textContent = sum('distance').toFixed(1) + ' km';
+  $('statTime').textContent = (sum('duration') / 60).toFixed(1) + ' h';
+  $('statCal').textContent = Math.round(sum('calories'));
+
+  $('empty').classList.toggle('hidden', workouts.length > 0);
+  $('list').innerHTML = '';
+  for (const w of workouts) {
+    const card = document.createElement('div');
+    card.className = 'card card-side bg-base-200 shadow-sm';
+    const img = w.photo ? `<img class="w-24 object-cover rounded-l-box" alt="">` : '';
+    card.innerHTML = `${img}
+      <div class="card-body p-4 gap-1">
+        <div class="flex items-center gap-2">
+          <span class="badge badge-primary">${w.type}</span>
+          <span class="text-xs opacity-60">${w.date}</span>
+          <button class="btn btn-ghost btn-xs ml-auto text-error" data-id="${w.id}" title="Delete"><i data-lucide="trash-2"></i></button>
+        </div>
+        <div class="text-sm">${w.distance.toFixed(2)} km · ${w.duration} min · ${w.calories} kcal</div>
+        ${w.notes ? `<p class="text-sm opacity-75">${escapeHtml(w.notes)}</p>` : ''}
+      </div>`;
+    if (w.photo) {
+      // Display Blob via object URL, revoked when the list re-renders
+      const imgEl = card.querySelector('img');
+      imgEl.src = URL.createObjectURL(w.photo);
+      imgEl.onload = () => URL.revokeObjectURL(imgEl.src);
+    }
+    card.querySelector('button').onclick = async () => {
+      await db.remove(w.id);
+      render();
+    };
+    $('list').appendChild(card);
+  }
+  lucide.createIcons();
+};
+const escapeHtml = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* ---------- Manual log form ---------- */
+$('form').date.valueAsDate = new Date();
+$('form').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target;
+  const type = f.type.value;
+  const duration = +f.duration.value;
+  const workout = {
+    type,
+    date: f.date.value,
+    distance: +f.distance.value || 0,
+    duration,
+    calories: +f.calories.value || estimateKcal(type, duration),
+    notes: f.notes.value.trim(),
+    photo: f.photo.files[0] || null, // stored as binary Blob/File
+  };
+  await db.add(workout);
+  f.reset();
+  f.date.valueAsDate = new Date();
+  render();
+};
+
+/* ---------- GPS tracking ---------- */
+let watchId = null, points = [], startTs = 0, timer = null, dist = 0;
+const updateLive = () => {
+  const secs = Math.floor((Date.now() - startTs) / 1000);
+  $('liveTime').textContent = fmtTime(secs);
+  $('liveDist').textContent = dist.toFixed(2) + ' km';
+};
+$('gpsStart').onclick = () => {
+  if (!navigator.geolocation) return ($('gpsInfo').textContent = 'GPS not supported on this device.');
+  points = []; dist = 0; startTs = Date.now();
+  timer = setInterval(updateLive, 1000);
+  watchId = navigator.geolocation.watchPosition(pos => {
+    const p = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+    if (points.length) dist += haversine(points.at(-1), p);
+    points.push(p);
+    $('gpsInfo').textContent = `Tracking… ${points.length} points`;
+    updateLive();
+  }, err => $('gpsInfo').textContent = 'GPS error: ' + err.message, { enableHighAccuracy: true });
+  $('gpsStart').disabled = true; $('gpsStop').disabled = false;
+};
+$('gpsStop').onclick = async () => {
+  navigator.geolocation.clearWatch(watchId);
+  clearInterval(timer);
+  const minutes = Math.max(1, Math.round((Date.now() - startTs) / 60000));
+  const type = $('form').type.value; // reuse selected type
+  await db.add({
+    type, date: new Date().toISOString().slice(0, 10),
+    distance: +dist.toFixed(2), duration: minutes,
+    calories: estimateKcal(type, minutes),
+    notes: `GPS route, ${points.length} points`, photo: null,
+  });
+  $('gpsInfo').textContent = 'Workout saved!';
+  $('gpsStart').disabled = false; $('gpsStop').disabled = true;
+  render();
+};
+
+/* ---------- Init ---------- */
+loadTheme();
+render();
+lucide.createIcons();
+</script>
+</body>
+</html>
